@@ -1,0 +1,134 @@
+#!/bin/bash
+#
+###############################################################################
+#
+# Copyright (c) 2024 Erkka Lehtoranta (erkka.lehtoranta@gmail.com)
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+###############################################################################
+#
+# Log active working time by stamping the starting and stopping
+# times.
+
+# THIS IS THE REPO ROOT DIRECTORY - SET AS NEEDED
+# TODO
+
+
+# TODO Configuration
+# if ! [ -s ".study.conf" ]; then
+# 	echo "No configuration file .study.conf present. Refer to README."
+# 	exit
+# fi
+#
+# while read -r confline; do
+# 	VAR=`echo ${confline} | awk -F = '{print $1}'`
+# 	${VAR}=`echo ${confline} | awk -F = '{print $2}'`
+# 	echo ${VAR}
+# done < ".study.conf"
+# exit
+
+set -e # Exit on error
+
+# Filenames TODO shove in a conf/toml file idk rewrite in Crablang™
+TIMEFILE="time.csv"
+
+STUDYROOT=`realpath ~/work/tuni/studies`
+COURSES="${STUDYROOT}/courses"
+echo ${STUDYROOT}
+R="\e[0m" # Reset
+LR="\e[2K" # Clean line
+B="\e[1m" # Bold
+GB="\e[32m$B" # Green bold
+
+# TODO Add completion, see `man bash: Programmable Completion` FIXME for -p
+
+while getopts "p:n:c" option; do
+    case $option in
+        p) # Project name
+            projectname=$OPTARG
+            ;;
+			#      n) # Create new course dir FIXME
+			#          projectname=$OPTARG
+			#          if [ make -f "${COURSES}/Makefile" new "course=$projectname" = 2 ]; then
+			# 	printf "Error encourtered when creating file; aborting."
+			# else
+			# 	echo "Created course directory $OPTARG"
+			# fi
+			#          ;;
+		c) # Force the confirm of study time recording
+			CONFIRM_RECORD=true
+			;;
+        \?) # Invalid
+            printf "Invalid option '$OPTARG'\n"
+            exit ;;
+    esac
+done
+
+if [[ -n $projectname ]]; then
+    printf "Started work on project $GB$projectname$R\n"
+fi
+
+# I like this prompt, don't hate on me
+START=`date +%s`
+echo -e "$LR\rStarted at $GB`date --date=@$START +%R`\e$R"
+
+# Pause/break runtime option. Don't know if this should stay as it
+# breaks the simple loop (start > stop > record), but f it before
+# the session logger gets here.
+pause_total=0
+while [ True ]; do
+	printf "${B}Studying.$R Press 'ENTER' to stop, 'p' to pause."
+	read -sn 1
+	if [[ $REPLY == 'p' ]]; then
+		pause_start=`date +%s`
+		printf "$LR\r${B}Paused.$R Press any key to resume."
+		read -sn 1
+		printf "$LR\r"
+		pause_end=`date +%s`
+		pause_total=$(($pause_total + $(( $pause_end - $pause_start )) ))
+	elif [[ $REPLY == '' ]]; then
+		break
+	else
+		printf "$LR\r"
+	fi
+done
+
+STOP=`date +%s`
+echo -e "$LR\rStopped at $GB`date --date=@$STOP +%R`\e$R"
+
+t=$(( $STOP - $START ))
+rt=$(( $t - $pause_total ))
+#
+# Loops at 24 hours, but if you work for longer you're a massive nerd
+# anyway lol get rekt
+echo -e "Time spent: $GB`date --date=@$rt -u +%X`$R (Studied: $rt, Paused: $pause_total)"
+
+# I feel sick
+TIMEFILE=${COURSES}/${projectname}/${TIMEFILE}
+if [ -n ${projectname} ] && [ -e "${TIMEFILE}" ] ; then
+	echo "TIMEFILE RELOADED ${TIMEFILE}"
+	if [ "${CONFIRM_RECORD}" = true ] ; then
+		read -sn 1 -p "Add record to time.csv? (y/n)"
+		if [ "${REPLY}" == 'y' ]; then
+			csv_result="`date \"+%d.%m.%Y\"`,${rt}"
+			echo ${csv_result} >> "${TIMEFILE}"
+			printf "\nAdded ${B}${csv_result}${R} to time.csv of ${GB}${projectname}${R}\n"
+		else
+			printf "\nDidn't add.\n"
+		fi
+	else
+		csv_result="`date \"+%d.%m.%Y\"`,${rt}"
+		echo ${csv_result} >> "${TIMEFILE}"
+		printf "Added ${B}${csv_result}${R} to time.csv of ${GB}${projectname}${R}\n"
+	fi
+fi
+
+# TODO Add prompt to save/export the spent time to the course of 1. current
+# $PWD (default), 2. selection or 3. discard.
+#
+# Selection could utilize fzf or the like. The resulting file path should
+# be sent to a handler program (written in Rust btw) that reads/writes
+# the CSV files (or DB later on idk)
+exit
